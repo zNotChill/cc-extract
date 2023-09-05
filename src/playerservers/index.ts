@@ -58,12 +58,12 @@ class PlayerServers {
   /**
    * @param username The username to log in with
    * @param password The password to log in with
+   * @param verbose Whether to log verbose messages
    * @returns Returns user data if successful, throws an error if not
    */
   async login({
     username,
     password,
-  }, {
     verbose = false,
   }) {
     this.verbose = verbose;
@@ -330,7 +330,7 @@ class PlayerServers {
     return serverData;
   }
 
-  private async setServerAttribute(attribute: ServerAttribute, value: any) {
+  private async setServerAttribute(attribute: ServerAttribute, value?: any) {
     if(!this.cookie) throw new Error('Not logged in');
     if(!this.user.selected_server) throw new Error('No server selected');
 
@@ -353,6 +353,9 @@ class PlayerServers {
         break;
       case "visibility":
         post.append("server-visibility", value);
+        break;
+      case "stop":
+        post.set("action", "stop");
         break;
     }
 
@@ -392,15 +395,41 @@ class PlayerServers {
     return await this.setServerAttribute('icon', icon);
   }
 
+  /**
+   * Sets the visibility of the selected server
+   * @param visible The visibility to set
+   * @returns 
+   */
   async setVisibility(visible: boolean) {
     return await this.setServerAttribute('visibility', visible ? 1 : 0);
+  }
+
+  async stopServer() {
+    return await this.setServerAttribute("stop");
+  }
+
+  async executeCommand(command: string) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+
+    const refresh = await this.request(this.getEndpoint('dashboard') + `?s=${this.user.selected_server?.id}`, 'GET', {});
+
+    const post = new URLSearchParams();
+    post.append("sendcmd", command);
+
+    const request = await this.request(this.getEndpoint('console'), 'POST', {"Content-Type": "application/x-www-form-urlencoded"}, post);
+
+    return {
+      command,
+    }
   }
 
   private getEndpoint(endpoint: keyof Endpoints) {
     const endpoints: Endpoints = {
       login: 'https://playerservers.com/login',
       dashboard: 'https://playerservers.com/dashboard',
-      account: 'https://playerservers.com/account'
+      account: 'https://playerservers.com/account',
+      console: 'https://playerservers.com/queries/console_backend',
     };
 
     return endpoints[endpoint];

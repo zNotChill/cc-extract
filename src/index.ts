@@ -43,13 +43,13 @@ const motds = [
 playerservers.login({
   username: CUBED_USER,
   password: CUBED_PASS,
-}, {
-  verbose: true,
 }).then(async (res) => {
   console.log('Logged in as ' + res.username);
 
   const select = await playerservers.selectServer("Mango");
-  
+
+  playerservers.executeCommand("say bing bong from api plks work :)")
+
   setInterval(async () => {
     await playerservers.setMOTD(motds[Math.floor(Math.random() * motds.length)]);
   }, 10000);

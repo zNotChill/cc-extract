@@ -7,6 +7,7 @@ interface Endpoints {
   "login": string,
   "dashboard": string,
   "account": string,
+  "console": string,
 }
 
 // User Attributes
@@ -160,7 +161,7 @@ interface arcadeMap {
 
 // Server Attributes
 
-type ServerAttribute = "motd" | "version" | "icon" | "visibility";
+type ServerAttribute = "motd" | "version" | "icon" | "visibility" | "stop";
 
 type ServerVersion =  "spigot-1.8" | "paper-1.8" |
                       "spigot-1.12" | "paper-1.12" |
