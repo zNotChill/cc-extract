@@ -6,6 +6,7 @@ import FormData from 'form-data';
 import colors from 'colors/safe';
 
 import { parseCookie, parseProtocol, parseUUID, stringifyCookie } from './lib/parse';
+import { File } from 'buffer';
 
 dotenv.config();
 
@@ -421,6 +422,37 @@ class PlayerServers {
 
     return {
       command,
+    }
+  }
+
+  /**
+   * Creates a file to the selected server
+   * @param path The path to the file to create
+   * @param content The content to create
+   * @returns 
+   */
+  async createFile(path: string, name: string, file: string) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+
+    const refresh = await this.request(this.getEndpoint('dashboard') + `?s=${this.user.selected_server?.id}`, 'GET', {});
+
+    const post = new FormData();
+    post.append("token", this.token || "");
+    post.append("edit-file-name", name);
+    post.append("edit-file-sub", "Save");
+    post.append("edit-file-content", file);
+    post.append("ext", name.split(".")[1]);
+
+    console.log(post);
+    
+    const request = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=new&dir=${path}`, 'POST', {"Content-Type": "multipart/form-data"}, post);
+    
+    console.log(request);
+    
+    return {
+      path,
+      file
     }
   }
 

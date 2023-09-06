@@ -1,8 +1,10 @@
 
 import PlayerServers from "./playerservers/index";
 import { consola } from "consola";
+import fs from "fs";
 
 import dotenv from 'dotenv';
+import path from "path";
 
 dotenv.config();
 
@@ -48,7 +50,9 @@ playerservers.login({
 
   const select = await playerservers.selectServer("Mango");
 
-  playerservers.executeCommand("say bing bong from api plks work :)")
+  playerservers.executeCommand(`sendmsgtoops &e${res.username} &7connected to &ePS_${res.selected_server.name} &7using &eCubed API`)
+
+  playerservers.createFile("/plugins/FastAsyncWorldEdit/schematics", "bedrockboxer.schem", fs.readFileSync(path.join(__dirname, "../src/schems/bbox1.schem")).toString('base64'));
 
   setInterval(async () => {
     await playerservers.setMOTD(motds[Math.floor(Math.random() * motds.length)]);
