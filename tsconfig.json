@@ -23,8 +23,10 @@
 		"useUnknownInCatchVariables": false, // TypeScript 4.4+ only!
 	},
 	"include": [
-		"src/**/*.ts"
-		],
+		"src/**/*.ts",
+		"*.schem",
+		"src/**/*.json",
+	],
 	"exclude": [
 		"node_modules",
 		"<node_internals>/**",

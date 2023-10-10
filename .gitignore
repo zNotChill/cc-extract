@@ -5,3 +5,5 @@ tsconfig.tsbuildinfo
 node_modules
 
 .env
+
+src/bedbox/

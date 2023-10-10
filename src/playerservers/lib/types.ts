@@ -8,6 +8,7 @@ interface Endpoints {
   "dashboard": string,
   "account": string,
   "console": string,
+  "properties": string,
 }
 
 // User Attributes
@@ -138,6 +139,7 @@ interface Server {
   version?: string,
   icon?: ServerIcon,
   visible?: boolean,
+  isOwner?: boolean,
 }
 
 // Minigame Attributes
@@ -161,7 +163,8 @@ interface arcadeMap {
 
 // Server Attributes
 
-type ServerAttribute = "motd" | "version" | "icon" | "visibility" | "stop";
+type ServerAttribute = "motd" | "version" | "icon" | "visibility" | "stop" |
+                      "who-can-start";
 
 type ServerVersion =  "spigot-1.8" | "paper-1.8" |
                       "spigot-1.12" | "paper-1.12" |
@@ -171,3 +174,102 @@ type ServerVersion =  "spigot-1.8" | "paper-1.8" |
                       "spigot-1.19" | "paper-1.19" |
                       "spigot-1.20" | "paper-1.20";
                     
+type ServerStartPermissions = {
+  "everyone": 1,
+  "owner": 2,
+  "friends": 3,
+}
+
+type LevelType = "default" | "flat" | "largebiomes" | "amplified";
+
+type Gamemode = {
+  "survival": 0,
+  "creative": 1,
+  "adventure": 2,
+  "spectator": 3,
+}
+type Difficulty = {
+  "peaceful": 0,
+  "easy": 1,
+  "normal": 2,
+  "hard": 3,
+}
+
+interface ServerProperty {
+  commandBlocks: {
+    name: "command_blocks",
+    value: 0 | 1,
+  },
+  pvp: {
+    name: "pvp",
+    value: 0 | 1,
+  },
+  monsterSpawning: {
+    name: "monster_spawning",
+    value: 0 | 1,
+  },
+  animalSpawning: {
+    name: "animal_spawning",
+    value: 0 | 1,
+  },
+  allowNether: {
+    name: "allow_nether",
+    value: 0 | 1,
+  },
+  allowFlight: {
+    name: "allow_flight",
+    value: 0 | 1,
+  },
+  difficulty: {
+    name: "difficulty",
+    value: 0 | 1 | 2 | 3,
+  },
+  structures: {
+    name: "structures",
+    value: 0 | 1,
+  },
+  gamemode: {
+    name: "gamemode",
+    value: 0 | 1 | 2 | 3,
+  },
+  forceGamemode: {
+    name: "force_gamemode",
+    value: 0 | 1,
+  },
+  levelType: {
+    name: "level_type",
+    value: LevelType,
+  },
+  resourcePack: {
+    name: "resource-pack",
+    value: string,
+  },
+  generatorSettings: {
+    name: "generator-settings",
+    value: object,
+  },
+  spawnProtection: {
+    name: "spawn-protection",
+    value: number,
+  },
+  seed: {
+    name: "level-seed",
+    value: number,
+  },
+  broadcastConsoleToOps: {
+    name: "broadcast-console-to-ops",
+    value: boolean,
+  },
+  levelName: {
+    name: "level-name",
+    value: string,
+  },
+}
+
+type ServerPropertyValueMap = {
+  [K in keyof ServerProperty]: ServerProperty[K]['value'];
+};
+
+// Event Emitter
+
+type Events = "login" | "motd" | "command" | "boostCommand" | "voteCommand" | "plugin" | "stop" | "file"

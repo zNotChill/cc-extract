@@ -1,27 +1,59 @@
 
 import dotenv from 'dotenv';
 import cheerio from 'cheerio';
-import fetch, { HeaderInit, RequestInit } from 'node-fetch';
+import fetch, { Body, HeaderInit, RequestInit } from 'node-fetch';
 import FormData from 'form-data';
 import colors from 'colors/safe';
-
 import { parseCookie, parseProtocol, parseUUID, stringifyCookie } from './lib/parse';
 import { File } from 'buffer';
 
 dotenv.config();
 
+class EventEmitter {
+  private events: Record<string, Function[]> = {};
+
+  on(event: Events, listener: Function) {
+    if (!this.events[event]) {
+      this.events[event] = [];
+    }
+    this.events[event].push(listener);
+  }
+
+  emit(event: string, ...args: any[]) {
+    const listeners = this.events[event];
+    if (listeners) {
+      for (const listener of listeners) {
+        listener(...args);
+      }
+    }
+  }
+
+  off(event: string, listener: Function) {
+    const listeners = this.events[event];
+    if (listeners) {
+      const index = listeners.indexOf(listener);
+      if (index !== -1) {
+        listeners.splice(index, 1);
+      }
+    }
+  }
+}
+
 class PlayerServers {
 
   private cookie: string | null;
   private token: string | null | undefined;
-  user: User;
+  public user: User;
   private verbose: boolean;
+  public event: EventEmitter;
 
   constructor() {
     this.cookie = null;
     this.token = null;
     this.user = {} as User;
     this.verbose = false;
+    this.event = new EventEmitter();
+
   }
 
   /**
@@ -32,13 +64,13 @@ class PlayerServers {
    * @param body The request body
    * @returns 
    */
-  async request(url: string, method: RequestMethod, headers: Record<string, string>, body?: any) {
+  public async request(url: string, method: RequestMethod, headers: Record<string, string>, body?: any) {
     let options: RequestInit = {
       method: method,
       body: body,
       headers: {
         ...headers,
-        "User-Agent": "please do not block my ip much love from japan",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.2; Win64; x64) Gecko/20130401 Firefox/46.7", // random user agent
       },
     }
     if (this.cookie && options.headers) {
@@ -105,6 +137,7 @@ class PlayerServers {
 
     this.verboseLog("Logged in as " + $user);
 
+    this.event.emit("login", this.user);
     return this.user;
   }
 
@@ -267,12 +300,13 @@ class PlayerServers {
           name,
           id: parseInt(id),
           port: 25565,
+          isOwner: i === 0 ? true : false,
         });
       });
       
       this.user.servers = servers;
     });
-
+    
     this.verboseLog("Got servers, parsing");
     return this.user.servers;
   }
@@ -292,6 +326,7 @@ class PlayerServers {
     
     let server;
     const servers = await this.getServers();
+    
 
     if(!servers) throw new Error('No servers found');
     if(parseInt(id)) server = servers.find((s) => s.id === parseInt(id));
@@ -311,6 +346,7 @@ class PlayerServers {
       version: '',
       icon: "NONE",
       visible: false,
+      isOwner: false,
     }
 
     const motd = $(".card-body form:nth-child(1) input[name='server-motd']").val();
@@ -324,6 +360,7 @@ class PlayerServers {
     serverData.version = version?.toString();
     serverData.icon = icon?.toString() as ServerIcon;
     serverData.visible = visibility?.toString() === "1" ? true : false;
+    serverData.isOwner = true;
     
     this.user.selected_server = serverData;
 
@@ -358,6 +395,9 @@ class PlayerServers {
       case "stop":
         post.set("action", "stop");
         break;
+      case "who-can-start":
+        post.append("who-can-start", value);
+        break;
     }
 
     const request = await this.request(this.getEndpoint('dashboard'), 'POST', {"Content-Type": "application/x-www-form-urlencoded"}, post);
@@ -375,6 +415,7 @@ class PlayerServers {
    */
   async setMOTD(motd: string) {
     this.verboseLog("Setting MOTD to " + motd);
+    this.event.emit("motd", motd);
     return await this.setServerAttribute('motd', motd);
   }
 
@@ -405,11 +446,25 @@ class PlayerServers {
     return await this.setServerAttribute('visibility', visible ? 1 : 0);
   }
 
+  async setPermission(whoCanStart: ServerStartPermissions) {
+    return await this.setServerAttribute('who-can-start', whoCanStart);
+  }
+
+  /**
+   * Stops the selected server
+   * @returns
+   */
   async stopServer() {
+    this.event.emit("stop");
     return await this.setServerAttribute("stop");
   }
 
-  async executeCommand(command: string) {
+  /**
+   * Executes a command on the selected server
+   * @param command The command to execute
+   * @returns The command executed
+   */
+  async executeCommand(command: string, silent?: boolean) {
     if(!this.cookie) throw new Error('Not logged in');
     if(!this.user.selected_server) throw new Error('No server selected');
 
@@ -420,6 +475,7 @@ class PlayerServers {
 
     const request = await this.request(this.getEndpoint('console'), 'POST', {"Content-Type": "application/x-www-form-urlencoded"}, post);
 
+    if(!silent) this.event.emit("command", command);
     return {
       command,
     }
@@ -429,9 +485,156 @@ class PlayerServers {
    * Creates a file to the selected server
    * @param path The path to the file to create
    * @param content The content to create
+   * @param name The name of the file to create
    * @returns 
    */
   async createFile(path: string, name: string, file: string) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+
+    const refresh = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=edit&medit=${path}/${name}&dir=${path}`, 'GET', {});
+    
+    const post = new FormData();
+    post.append("token", this.token || "");
+    post.append("edit-file-name", name.split(".")[0]);
+    post.append("edit-file-sub", "Submit");
+    post.append("edit-file-content", file);
+    post.append("ext", name.split(".")[1]);
+
+    const request = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=new&dir=${path}`, 'POST', {}, post);
+
+    this.event.emit("file", {
+      path,
+      file,
+      name
+    });
+    return {
+      path,
+      file
+    }
+  }
+
+  // TODO: Finish
+  async createServer(name: string, version: ServerVersion) {
+    if(!this.cookie) throw new Error('Not logged in');
+
+    const post = new FormData();
+    post.append("token", this.token || "");
+    post.append("name", name);
+    post.append("version", version);
+
+    const request = await this.request(this.getEndpoint('account') + "/new", 'POST', {}, post);
+
+    const body = await request.text();
+    const $ = cheerio.load(body);
+
+    if(name.length < 3) throw new Error('Server name must be at least 3-16 characters long and can only contain letters and numbers');
+    if(body.includes("Another server already has this name!")) throw new Error('Server name already taken');
+    if(body.includes("Invalid server name")) throw new Error('Invalid server name (must be 3-16 characters long and can only contain letters and numbers)');
+
+    return {
+      name,
+      version,
+    }
+  }
+
+  /**
+   * Installs a plugin to the selected server
+   * @param name The name of the plugin to install
+   * @returns The name of the plugin installed, throws an error if it fails
+   */
+  async installPlugin(name: string) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+
+    const refresh = await this.request(this.getEndpoint('dashboard') + `?s=${this.user.selected_server?.id}`, 'GET', {});
+
+    // no post request??? thank you cubedcraft
+
+    const request = await this.request(this.getEndpoint('dashboard') + `/plugins/?install=${name}`, 'GET', {});
+
+    const body = await request.text();
+
+    if(body === "OK") {
+      this.event.emit("plugin", {
+        action: "install",
+        name,
+      });
+      return {
+        name,
+      }
+    } else {
+      return {
+        name,
+        error: "Failed to install plugin, is it already installed?"
+      }
+    }
+  }
+
+  /**
+   * Installs multiple plugins to the selected server
+   * @param names The names of the plugins to install
+   */
+  async installPlugins(names: string[]) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+
+    const refresh = await this.request(this.getEndpoint('dashboard') + `?s=${this.user.selected_server?.id}`, 'GET', {});
+
+    names.forEach((plugin) => {
+      this.installPlugin(plugin);
+    })
+  }
+
+  /**
+   * Uninstalls a plugin from the selected server
+   * @param name The name of the plugin to uninstall
+   * @returns The name of the plugin uninstalled, throws an error if it fails
+   */
+  async uninstallPlugin(name: string) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+
+    const refresh = await this.request(this.getEndpoint('dashboard') + `?s=${this.user.selected_server?.id}`, 'GET', {});
+
+    // no post request??? thank you cubedcraft
+
+    const request = await this.request(this.getEndpoint('dashboard') + `/plugins/?remove=${name}`, 'GET', {});
+
+    const body = await request.text();
+
+    if(body === "OK") {
+      this.event.emit("plugin", {
+        action: "uninstall",
+        name,
+      });
+      return {
+        name,
+      }
+    } else {
+      return {
+        name,
+        error: "Failed to uninstall plugin, is it installed?"
+      }
+    }
+  }
+
+  /**
+   * Uninstalls multiple plugins from the selected server
+   * @param names The names of the plugins to uninstall
+   */
+  async uninstallPlugins(names: string[]) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+
+    const refresh = await this.request(this.getEndpoint('dashboard') + `?s=${this.user.selected_server?.id}`, 'GET', {});
+
+    names.forEach((plugin) => {
+      this.uninstallPlugin(plugin);
+    })
+  }
+
+  async setServerProperties(properties: [ServerProperty]) {
     if(!this.cookie) throw new Error('Not logged in');
     if(!this.user.selected_server) throw new Error('No server selected');
 
@@ -439,20 +642,87 @@ class PlayerServers {
 
     const post = new FormData();
     post.append("token", this.token || "");
-    post.append("edit-file-name", name);
-    post.append("edit-file-sub", "Save");
-    post.append("edit-file-content", file);
-    post.append("ext", name.split(".")[1]);
+    post.append("action", "properties");
+
+    for (const key in properties) {
+      if (Object.prototype.hasOwnProperty.call(properties, key)) {
+        
+      }
+    }
 
     console.log(post);
     
-    const request = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=new&dir=${path}`, 'POST', {"Content-Type": "multipart/form-data"}, post);
-    
-    console.log(request);
-    
+    /// gibbiemonster was here
+    const request = await this.request(this.getEndpoint('properties'), 'POST', {}, post);
+
     return {
-      path,
-      file
+      properties,
+    }
+  }
+
+  async getCommands() {
+    if(!this.cookie) return new Error('Not logged in');
+    if(!this.user.selected_server) return new Error('No server selected');
+    
+    const refresh = await this.request(this.getEndpoint('dashboard') + `?s=${this.user.selected_server?.id}`, 'GET', {});
+
+    const request = await this.request(this.getEndpoint('dashboard') + "/settings", 'GET', {});
+
+    const body = await request.text();
+    const $ = cheerio.load(body);
+
+    const commands: string[] = [];
+
+    $(".input-group.mb-3").each((i, el) => {
+      const row = $(el);
+      const command = row.find("input#inputCommand").val()?.toString();
+      const id = row.find("input#id").attr("id")?.toString();
+    });
+
+    return commands;
+  }
+
+  async addBoostCommand(command: string) {  // no overcomplicated code here
+    if(!this.cookie) return new Error('Not logged in');
+    if(!this.user.selected_server) return new Error('No server selected');
+    
+    const refresh = await this.request(this.getEndpoint('dashboard') + `?s=${this.user.selected_server?.id}`, 'GET', {});
+
+    const post = new FormData();
+    post.append("token", this.token || "");
+    post.append("action", "new_boost_command");
+    post.append("new_command", command);
+
+    const request = await this.request(this.getEndpoint('dashboard') + "/settings", 'POST', {}, post);
+
+    this.event.emit("boostCommand", {
+      action: "add",
+      command,
+    });
+    return {
+      command,
+    }
+  }
+
+  async addVoteCommand(command: string) {
+    if(!this.cookie) return new Error('Not logged in');
+    if(!this.user.selected_server) return new Error('No server selected');
+    
+    const refresh = await this.request(this.getEndpoint('dashboard') + `?s=${this.user.selected_server?.id}`, 'GET', {});
+
+    const post = new FormData();
+    post.append("token", this.token || "");
+    post.append("action", "new_vote_command");
+    post.append("new_command", command);
+
+    const request = await this.request(this.getEndpoint('dashboard') + "/settings", 'POST', {}, post);
+
+    this.event.emit("voteCommand", {
+      action: "add",
+      command,
+    });
+    return {
+      command,
     }
   }
 
@@ -462,6 +732,7 @@ class PlayerServers {
       dashboard: 'https://playerservers.com/dashboard',
       account: 'https://playerservers.com/account',
       console: 'https://playerservers.com/queries/console_backend',
+      properties: 'https://playerservers.com/dashboard/properties',
     };
 
     return endpoints[endpoint];
