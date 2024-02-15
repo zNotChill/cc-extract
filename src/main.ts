@@ -3,6 +3,7 @@ import { consola } from "consola";
 import inquirer from 'inquirer';
 import fs from "fs";
 
+import unzipper from "unzipper";
 import dotenv from 'dotenv';
 import path from "path";
 import normalQuestion from "./normalQuestion";
@@ -88,7 +89,6 @@ async function run() {
               return Promise.resolve();
             }
             folderCache.push(folder.deletefolderlink);
-            return extract(folder.deletefolderlink);
           });
     
           Promise.all(folderPromises).then(() => {
@@ -101,6 +101,14 @@ async function run() {
     extract("/").then((files: unknown) => {
       consola.success("[RUN] Extracted files");
 
+      let downloaded = 0;
+      setInterval(() => {
+        if(downloaded === folderCache.length) {
+          consola.success("[RUN] Downloaded all files");
+          process.exit(0);
+        }  
+        process.stdout.write(`Progress: ${downloaded}/${folderCache.length} [${"#".repeat(downloaded)}${" ".repeat(folderCache.length - downloaded)}] ${Math.floor((downloaded / folderCache.length) * 100)}%\r`);
+      }, 100);
       if(!fs.existsSync(cacheDataDir)) {
         fs.mkdirSync(cacheDataDir);
       }
@@ -115,12 +123,33 @@ async function run() {
         const buffer = await playerservers.downloadFolder(path.join(cacheDataDir, file), file);
 
         if (buffer) {
+          downloaded++;
           if(!fs.existsSync(path.join(cacheDataDir, server.server + "-temp"))) {
             fs.mkdirSync(path.join(cacheDataDir, server.server + "-temp"));
           }
-          fs.writeFileSync(path.join(cacheDataDir, server.server + "-temp", "temp-" + `${file}`.replace(/\\/g, "").replace(/\//g, "") + ".zip"), buffer);
+          
+          fs.writeFileSync(path.join(cacheDataDir, server.server + "-temp", "temp-" + 
+          `${file}`
+          .replace(/\//, "")
+          .replace(/\//, "")
+          .replace(/\\/, "")
+          .replace(/\\/, "")
+          .replace(/\//g, "-")
+          + ".zip"), buffer);
+
+          fs.createReadStream(path.join(cacheDataDir, server.server + "-temp", "temp-" + 
+          `${file}`
+          .replace(/\//, "")
+          .replace(/\//, "")
+          .replace(/\\/, "")
+          .replace(/\\/, "")
+          .replace(/\//g, "-")
+          + ".zip"))
+            .pipe(unzipper.Extract({ path: path.join(cacheDataDir, server.server + file) }));
         }
       });
+
+      fs.rmSync(path.join(cacheDataDir, server.server + "-temp"), { recursive: true });
     });
       
     
