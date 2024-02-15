@@ -17,3 +17,4 @@ Stupid simple TypeScript template with Nodemon support.
 
 # mango-motd
 # mango-motd
+# cc-extract
