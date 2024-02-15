@@ -71,6 +71,7 @@ class PlayerServers {
       headers: {
         ...headers,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.2; Win64; x64) Gecko/20130401 Firefox/46.7", // random user agent
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
       },
     }
     if (this.cookie && options.headers) {
@@ -326,7 +327,6 @@ class PlayerServers {
     
     let server;
     const servers = await this.getServers();
-    
 
     if(!servers) throw new Error('No servers found');
     if(parseInt(id)) server = servers.find((s) => s.id === parseInt(id));
@@ -481,6 +481,38 @@ class PlayerServers {
     }
   }
 
+  async getFiles(path: string) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+
+    const refresh = await this.request(this.getEndpoint('dashboard') + `/filemanager?dir=${path}`, 'GET', {});
+
+    const request = await this.request(this.getEndpoint('queries') + `/list_files/?dir=${path}`, 'GET', {});
+    const body = await request.text();
+
+    return JSON.parse(body);
+  }
+
+  async downloadFile(path: string, name: string) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+
+    const request = await this.request(this.getEndpoint('dashboard') + `/filemanager/&action=download&type=file&name=${name}&download=/${name}&dir=${path}`, 'GET', {});
+    const body = await request.buffer();
+
+    return body;
+  }
+
+  async downloadFolder(path: string, name: string) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+
+    const request = await this.request(this.getEndpoint('dashboard') + `/filemanager/&action=download&type=folder&name=${name}&download=/${name}&dir=${path}`, 'GET', {});
+    const body = await request.buffer();
+
+    return body;
+  }
+
   /**
    * Creates a file to the selected server
    * @param path The path to the file to create
@@ -491,17 +523,28 @@ class PlayerServers {
   async createFile(path: string, name: string, file: string) {
     if(!this.cookie) throw new Error('Not logged in');
     if(!this.user.selected_server) throw new Error('No server selected');
-
-    const refresh = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=edit&medit=${path}/${name}&dir=${path}`, 'GET', {});
     
-    const post = new FormData();
-    post.append("token", this.token || "");
-    post.append("edit-file-name", name.split(".")[0]);
-    post.append("edit-file-sub", "Submit");
-    post.append("edit-file-content", file);
-    post.append("ext", name.split(".")[1]);
+    const refresh = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=new&dir=${path}`, 'GET', {});
+    const existingFile = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=edit&medit=${path}/${name}&dir=${path}`, 'GET', {});
 
-    const request = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=new&dir=${path}`, 'POST', {}, post);
+    const $ = cheerio.load(await refresh.text());
+    let editToken = $('input[name="token"]').val();
+
+    const $2 = cheerio.load(await existingFile.text());
+    let existingName = $2("input#edit-file-name").val();
+
+    if(existingName) return this.editFile(path, name, file);
+
+    const post = new FormData();
+    post.append("edit-file-name", name.split(".")[0]);
+    post.append("ext", name.split(".")[1]);
+    post.append("edit-file-content", file);
+    post.append("token", editToken as string || "");
+    post.append("edit-file-sub", "Submit");
+
+    const request = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=new&dir=${path}`, 'POST', {
+      "Content-Type": "multipart/form-data; boundary=" + post.getBoundary(),
+    }, post);
 
     this.event.emit("file", {
       path,
@@ -513,6 +556,39 @@ class PlayerServers {
       file
     }
   }
+
+  async editFile(path: string, name: string, file: string) {
+    if(!this.cookie) throw new Error('Not logged in');
+    if(!this.user.selected_server) throw new Error('No server selected');
+    
+    const refresh = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=edit&medit=${path}/${name}&dir=${path}`, 'GET', {});
+    
+    const $ = cheerio.load(await refresh.text());
+
+    let editToken = $('input[name="token"]').val();
+
+    const post = new FormData();
+    post.append("edit-file-name", name);
+    post.append("edit-file-content", file);
+    post.append("token", editToken as string || "");
+    post.append("edit-file-sub", "Submit");
+
+    console.log(post);
+
+    const request = await this.request(this.getEndpoint('dashboard') + `/filemanager/?action=edit&medit=${path}/${name}&dir=${path}`, 'POST', {
+      "Content-Type": "multipart/form-data; boundary=" + post.getBoundary(),
+    }, post);
+
+    this.event.emit("file", {
+      path,
+      file,
+      name
+    });
+    return {
+      path,
+      file
+    }
+  } 
 
   // TODO: Finish
   async createServer(name: string, version: ServerVersion) {
@@ -733,6 +809,7 @@ class PlayerServers {
       account: 'https://playerservers.com/account',
       console: 'https://playerservers.com/queries/console_backend',
       properties: 'https://playerservers.com/dashboard/properties',
+      queries: 'https://playerservers.com/queries',
     };
 
     return endpoints[endpoint];

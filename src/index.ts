@@ -1,4 +1,4 @@
 
-import("./motd")
+import("./main")
 
 export const baseDir = __dirname;

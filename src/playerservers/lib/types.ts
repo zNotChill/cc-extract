@@ -9,6 +9,7 @@ interface Endpoints {
   "account": string,
   "console": string,
   "properties": string,
+  "queries": string,
 }
 
 // User Attributes
