@@ -75,7 +75,7 @@ async function run() {
 
     let selServer = await playerservers.selectServer(server.server);
 
-    playerservers.executeCommand("say Connected via cc-extract-app, extracting!")
+    await playerservers.executeCommand("say Connected via cc-extract-app, extracting!")
 
     const folderCache = [] as string[];
     function extract(path: string) {
@@ -97,16 +97,25 @@ async function run() {
         });
       });
     }
+
+    let folderCount = 0;
+
+    extract("/plugins").then(async (files: unknown) => {
+      extract("/").then(async (files: unknown) => {
+        folderCount = folderCache.length;
+      });
+    });
     
-    extract("/").then((files: unknown) => {
+    extract("/").then(async (files: unknown) => {
       consola.success("[RUN] Extracted files");
 
+      await playerservers.executeCommand(`say Extracted all files, downloading! [${folderCache.length} files]`)
       let downloaded = 0;
       setInterval(() => {
         if(downloaded === folderCache.length) {
           consola.success("[RUN] Downloaded all files");
           process.exit(0);
-        }  
+        }
         process.stdout.write(`Progress: ${downloaded}/${folderCache.length} [${"#".repeat(downloaded)}${" ".repeat(folderCache.length - downloaded)}] ${Math.floor((downloaded / folderCache.length) * 100)}%\r`);
       }, 100);
       if(!fs.existsSync(cacheDataDir)) {
@@ -119,43 +128,64 @@ async function run() {
       if (files === null) {
         return;
       }
-      (files as any[]).forEach(async (file) => {
-        const buffer = await playerservers.downloadFolder(path.join(cacheDataDir, file), file);
-
-        if (buffer) {
-          downloaded++;
+      Promise.all(
+        (files as any[]).map(async (file) => {
           if(!fs.existsSync(path.join(cacheDataDir, server.server + "-temp"))) {
             fs.mkdirSync(path.join(cacheDataDir, server.server + "-temp"));
           }
-          
-          fs.writeFileSync(path.join(cacheDataDir, server.server + "-temp", "temp-" + 
-          `${file}`
-          .replace(/\//, "")
-          .replace(/\//, "")
-          .replace(/\\/, "")
-          .replace(/\\/, "")
-          .replace(/\//g, "-")
-          + ".zip"), buffer);
-
-          fs.createReadStream(path.join(cacheDataDir, server.server + "-temp", "temp-" + 
-          `${file}`
-          .replace(/\//, "")
-          .replace(/\//, "")
-          .replace(/\\/, "")
-          .replace(/\\/, "")
-          .replace(/\//g, "-")
-          + ".zip"))
-            .pipe(unzipper.Extract({ path: path.join(cacheDataDir, server.server + file) }));
-        }
+          const buffer = await playerservers.downloadFolder(path.join(cacheDataDir, file), file);
+          if (buffer) {
+            downloaded++;
+            fs.writeFileSync(
+              path.join(
+                cacheDataDir,
+                server.server + "-temp",
+                "temp-" +
+                  `${file}`
+                    .replace(/\//, "")
+                    .replace(/\//, "")
+                    .replace(/\\/, "")
+                    .replace(/\\/, "")
+                    .replace(/\//g, "-") +
+                  ".zip"
+              ),
+              buffer
+            );
+            const extractStream = fs.createReadStream(
+              path.join(
+                cacheDataDir,
+                server.server + "-temp",
+                "temp-" +
+                  `${file}`
+                    .replace(/\//, "")
+                    .replace(/\//, "")
+                    .replace(/\\/, "")
+                    .replace(/\\/, "")
+                    .replace(/\//g, "-") +
+                  ".zip"
+              )
+            ).pipe(unzipper.Extract({ path: path.join(cacheDataDir, server.server + file) }));
+            
+            extractStream.on('error', (err) => {
+              const fileSize = fs.statSync(path.join(cacheDataDir, server.server + "-temp", "temp-" + `${file}`.replace(/\//, "").replace(/\//, "").replace(/\\/, "").replace(/\\/, "").replace(/\//g, "-") + ".zip")).size;
+              console.error(`Failed to extract ${file} - file is corrupted or not a zip file. (or empty) [${fileSize} bytes]`);
+            });
+          }
+        })
+      ).then(() => {
+        setTimeout(() => {
+          try {
+            fs.rmSync(path.join(cacheDataDir, server.server + "-temp"), { recursive: true });
+          } catch (error) {
+            console.error(`Failed to delete temp folder: ${error}`);
+          }
+        }, 1000);
       });
-
-      fs.rmSync(path.join(cacheDataDir, server.server + "-temp"), { recursive: true });
     });
-      
     
 
   }).catch((err) => {
     consola.error("[RUN] Error logging in", err);
-  });
+  })
   
 }
